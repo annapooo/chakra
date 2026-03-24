@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Mic, Scale, History, Globe, 
@@ -6,12 +6,24 @@ import {
 } from 'lucide-react';
 
 export default function App() {
-  const [showDashboard, setShowDashboard] = useState(false);
+  const [currentPhase, setCurrentPhase] = useState('landing'); // 'landing', 'transition', 'dashboard'
+
+  // Manage the transition phase timing
+  useEffect(() => {
+    if (currentPhase === 'transition') {
+      const timer = setTimeout(() => {
+        setCurrentPhase('dashboard');
+      }, 4000); // 4 seconds total transition duration for a slower, dramatic effect
+      return () => clearTimeout(timer);
+    }
+  }, [currentPhase]);
 
   return (
     <div className="min-h-screen w-full bg-[#030303] text-white font-sans overflow-hidden selection:bg-yellow-500/30">
       <AnimatePresence mode="wait">
-        {!showDashboard ? (
+        
+        {/* PHASE 1: LANDING PAGE */}
+        {currentPhase === 'landing' && (
           <motion.div
             key="landing"
             initial={{ opacity: 0 }}
@@ -80,7 +92,7 @@ export default function App() {
                   borderColor: "rgba(234,179,8,1)"
                 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={() => setShowDashboard(true)}
+                onClick={() => setCurrentPhase('transition')}
                 className="relative overflow-hidden px-10 md:px-16 py-4 md:py-6 border border-yellow-600/50 rounded-full bg-black/80 backdrop-blur-xl text-yellow-500 font-bold tracking-[0.2em] transition-all flex items-center gap-4 group uppercase text-xs md:text-base cursor-pointer shadow-[0_0_20px_rgba(234,179,8,0.15)]"
               >
                 <span className="relative z-10 flex items-center gap-3">
@@ -91,12 +103,53 @@ export default function App() {
               </motion.button>
             </div>
           </motion.div>
-        ) : (
+        )}
+
+        {/* PHASE 2: ARROW FLYING TRANSITION */}
+        {currentPhase === 'transition' && (
           <motion.div
-            key="dashboard"
+            key="transition"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ duration: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.5 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black overflow-hidden pointer-events-none"
+          >
+            {/* Ambient transition glow */}
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.5 }}
+              animate={{ opacity: 0.5, scale: 1.5 }}
+              transition={{ duration: 3, ease: "easeOut" }}
+              className="absolute w-[80vw] h-[80vw] bg-yellow-600/10 rounded-full blur-[100px]"
+            />
+            
+            {/* The Specific Arrow Image flying left to right (Slower) */}
+            <motion.div
+              initial={{ x: "-120vw", scale: 0.8 }}
+              animate={{ x: "120vw", scale: 1.2 }}
+              transition={{ duration: 3.5, ease: "easeInOut", delay: 0.2 }}
+              className="relative z-10 flex items-center drop-shadow-[0_0_30px_rgba(234,179,8,0.8)]"
+            >
+              <img 
+                src="https://wallpapers.com/images/hd/gold-arrow-for-logo-design-png-fnd42-h87vyyuhgwmi4u30.png" 
+                alt="Golden Arrow Transition"
+                className="w-full max-w-[500px] md:max-w-[700px] object-contain drop-shadow-[0_0_15px_rgba(234,179,8,0.6)] mix-blend-screen"
+                style={{
+                  // Removing pure white pixels and black backgrounds if they exist utilizing mix-blend mode and drop shadows
+                  filter: "contrast(1.2) brightness(1.2)"
+                }}
+              />
+            </motion.div>
+          </motion.div>
+        )}
+
+        {/* PHASE 3: DASHBOARD */}
+        {currentPhase === 'dashboard' && (
+          <motion.div
+            key="dashboard"
+            initial={{ opacity: 0, y: 50, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ duration: 1, ease: "easeOut" }}
             className="min-h-screen w-full relative bg-[#030303] p-4 sm:p-6 md:p-8 lg:p-12"
           >
             {/* Ambient Background Glow for Dashboard */}
@@ -113,7 +166,7 @@ export default function App() {
                 </h2>
               </div>
               <button 
-                onClick={() => setShowDashboard(false)}
+                onClick={() => setCurrentPhase('landing')}
                 className="px-6 py-2.5 border border-zinc-800 rounded-full text-xs md:text-sm tracking-widest text-zinc-400 hover:text-yellow-400 hover:border-yellow-600/50 hover:bg-yellow-900/20 transition-all uppercase cursor-pointer"
               >
                 Retreat
