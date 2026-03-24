@@ -20,6 +20,16 @@ export default function App() {
   const [textInput, setTextInput] = useState("");
   const messagesEndRef = useRef(null);
 
+  // Manage the transition phase timing
+  useEffect(() => {
+    if (activeView === 'transition') {
+      const timer = setTimeout(() => {
+        setActiveView('dashboard');
+      }, 4000); // 4 seconds total transition duration for a slower, dramatic effect
+      return () => clearTimeout(timer);
+    }
+  }, [activeView]);
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
@@ -102,7 +112,7 @@ export default function App() {
     <div className="min-h-screen w-full bg-[#030303] text-white font-sans overflow-hidden selection:bg-yellow-500/30">
       <AnimatePresence mode="wait">
         
-        {/* LANDING PAGE */}
+        {/* PHASE 1: LANDING PAGE */}
         {activeView === "landing" && (
           <motion.div
             key="landing"
@@ -168,7 +178,7 @@ export default function App() {
                   borderColor: "rgba(234,179,8,1)"
                 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={() => setActiveView("dashboard")}
+                onClick={() => setActiveView("transition")}
                 className="relative overflow-hidden px-10 md:px-16 py-4 md:py-6 border border-yellow-600/50 rounded-full bg-black/80 backdrop-blur-xl text-yellow-500 font-bold tracking-[0.2em] transition-all flex items-center gap-4 group uppercase text-xs md:text-base cursor-pointer shadow-[0_0_20px_rgba(234,179,8,0.15)]"
               >
                 <span className="relative z-10 flex items-center gap-3">
@@ -181,14 +191,51 @@ export default function App() {
           </motion.div>
         )}
 
-        {/* DASHBOARD PAGE */}
-        {activeView === "dashboard" && (
+        {/* PHASE 2: ARROW FLYING TRANSITION */}
+        {activeView === 'transition' && (
           <motion.div
-            key="dashboard"
+            key="transition"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.5 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black overflow-hidden pointer-events-none"
+          >
+            {/* Ambient transition glow */}
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.5 }}
+              animate={{ opacity: 0.5, scale: 1.5 }}
+              transition={{ duration: 3, ease: "easeOut" }}
+              className="absolute w-[80vw] h-[80vw] bg-yellow-600/10 rounded-full blur-[100px]"
+            />
+            
+            {/* The Specific Arrow Image flying left to right (Slower) */}
+            <motion.div
+              initial={{ x: "-120vw", scale: 0.8 }}
+              animate={{ x: "120vw", scale: 1.2 }}
+              transition={{ duration: 3.5, ease: "easeInOut", delay: 0.2 }}
+              className="relative z-10 flex items-center drop-shadow-[0_0_30px_rgba(234,179,8,0.8)]"
+            >
+              <img 
+                src="https://wallpapers.com/images/hd/gold-arrow-for-logo-design-png-fnd42-h87vyyuhgwmi4u30.png" 
+                alt="Golden Arrow Transition"
+                className="w-full max-w-[500px] md:max-w-[700px] object-contain drop-shadow-[0_0_15px_rgba(234,179,8,0.6)] mix-blend-screen"
+                style={{
+                  // Removing pure white pixels and black backgrounds if they exist utilizing mix-blend mode and drop shadows
+                  filter: "contrast(1.2) brightness(1.2)"
+                }}
+              />
+            </motion.div>
+          </motion.div>
+        )}
+
+        {/* PHASE 3: DASHBOARD */}
+        {activeView === 'dashboard' && (
+          <motion.div
+            key="dashboard"
+            initial={{ opacity: 0, y: 50, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ duration: 1, ease: "easeOut" }}
             className="min-h-screen w-full relative bg-[#030303] p-4 sm:p-6 md:p-8 lg:p-12"
           >
             <div className="fixed top-0 left-1/2 -translate-x-1/2 w-[800px] h-[600px] bg-yellow-900/15 blur-[150px] rounded-full pointer-events-none" />
