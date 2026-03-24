@@ -8,3 +8,5 @@ openai
 python-multipart
 sounddevice
 scipy
+sentence-transformers
+groq

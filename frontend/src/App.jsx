@@ -307,7 +307,7 @@ export default function App() {
                 </div>
               </motion.div>
 
-              {/* 3. Case History */}
+              {/* 3. Demo Videos */}
               <motion.div
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -321,13 +321,13 @@ export default function App() {
                   <div className="w-14 h-14 md:w-16 md:h-16 rounded-2xl bg-[#080808] border border-yellow-700/30 flex items-center justify-center mb-6 shadow-inner group-hover:border-yellow-400/50 transition-all">
                     <History className="w-6 h-6 md:w-7 md:h-7 text-yellow-600 group-hover:text-yellow-400" />
                   </div>
-                  <h3 className="text-xl md:text-2xl font-bold text-zinc-100 mb-3 tracking-wide">Case Archives</h3>
+                  <h3 className="text-xl md:text-2xl font-bold text-zinc-100 mb-3 tracking-wide">Demo Videos</h3>
                   <p className="text-zinc-400 text-sm leading-relaxed font-light">
-                    Access precedents and past battlefronts. Review previously analyzed cases, outcomes, and identified attack vectors.
+                    Watch form-filling demonstrations. Learn how to complete various government forms with guided video tutorials.
                   </p>
                 </div>
                 <div className="mt-8 md:mt-10 flex items-center text-xs text-yellow-500/80 uppercase tracking-widest font-bold">
-                  Open Vault <ChevronRight className="w-4 h-4 ml-1" />
+                  View Demos <ChevronRight className="w-4 h-4 ml-1" />
                 </div>
               </motion.div>
 
