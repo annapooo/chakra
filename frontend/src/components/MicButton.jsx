@@ -1,100 +1,79 @@
-import React, { useState, useRef } from 'react';
+import React, { useRef, useState } from "react";
 
-const MicButton = ({ onTranscript, languageCode }) => {
-  const [isRecording, setIsRecording] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
+export default function MicButton({ onTranscript, languageCode }) {
   const mediaRecorderRef = useRef(null);
-  const audioChunksRef = useRef([]);
+  const [recording, setRecording] = useState(false);
+  const [transcript, setTranscript] = useState("");
 
   const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorderRef.current = new MediaRecorder(stream);
-      audioChunksRef.current = [];
+    setRecording(true);
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaRecorderRef.current = new MediaRecorder(stream);
+    const audioChunks = [];
 
-      mediaRecorderRef.current.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
-      };
+    mediaRecorderRef.current.ondataavailable = (event) => {
+      audioChunks.push(event.data);
+    };
 
-      mediaRecorderRef.current.onstop = async () => {
-        setIsProcessing(true);
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        audioChunksRef.current = [];
+    mediaRecorderRef.current.onstop = async () => {
+      const audioBlob = new Blob(audioChunks, { type: "audio/wav" });
+      const formData = new FormData();
+      formData.append("file", audioBlob, "audio.wav");
+      if (languageCode) {
+        formData.append("language_code", languageCode);
+      }
+
+      try {
+        const response = await fetch("http://localhost:8000/stt", {
+          method: "POST",
+          body: formData,
+        });
+
+        const data = await response.json();
+        const finalTranscript = data.transcript || data.text || "";
+        console.log("STT Result:", finalTranscript);
         
-        const timestamp = new Date().getTime();
-        const file = new File([audioBlob], `recording_${timestamp}.webm`, { type: 'audio/webm' });
+        setTranscript(finalTranscript); // Show transcript locally
         
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('language_code', languageCode);
-
-        try {
-          const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
-          const response = await fetch(`${API_URL}/stt`, {
-            method: 'POST',
-            body: formData,
-          });
-
-          if (response.ok) {
-            const data = await response.json();
-            onTranscript(data.transcript, data.language_code);
-          } else {
-            console.error('STT failed');
-          }
-        } catch (error) {
-          console.error('Error during STT request:', error);
-        } finally {
-          setIsProcessing(false);
+        // Fix: Call the callback to pass data up to App.jsx
+        if (onTranscript) {
+          onTranscript(finalTranscript, data.language_code || languageCode);
         }
-      };
+      } catch (err) {
+        console.error("STT failed", err);
+        setTranscript("STT failed. Please try again.");
+      }
+    };
 
-      mediaRecorderRef.current.start();
-      setIsRecording(true);
-    } catch (err) {
-      console.error('Microphone access denied', err);
-    }
+    mediaRecorderRef.current.start();
   };
 
   const stopRecording = () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop();
-      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
-      setIsRecording(false);
-    }
+    setRecording(false);
+    mediaRecorderRef.current.stop();
   };
 
   return (
-    <div className="flex flex-col items-center">
+    <div style={{ textAlign: "center", marginTop: "50px" }}>
       <button
         onMouseDown={startRecording}
         onMouseUp={stopRecording}
         onMouseLeave={stopRecording}
-        onTouchStart={startRecording}
-        onTouchEnd={stopRecording}
-        disabled={isProcessing}
-        className={`w-32 h-32 rounded-full flex items-center justify-center transition-all duration-300 shadow-lg ${
-          isRecording 
-            ? 'bg-red-500 scale-110 shadow-red-200 animate-pulse' 
-            : isProcessing 
-              ? 'bg-gray-400 cursor-not-allowed'
-              : 'bg-indigo-600 hover:bg-indigo-700 hover:scale-105 shadow-indigo-200'
-        }`}
+        style={{
+          padding: "20px",
+          borderRadius: "50%",
+          backgroundColor: recording ? "red" : "blue",
+          color: "white",
+          fontSize: "16px",
+          border: "none",
+          cursor: "pointer",
+        }}
       >
-        <svg xmlns="http://www.w3.org/2000/svg" className={`h-12 w-12 text-white ${isProcessing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          {isProcessing ? (
-             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          ) : (
-             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-          )}
-        </svg>
+        {recording ? "Recording..." : "Hold to Speak"}
       </button>
-      <span className="mt-4 text-sm font-medium text-gray-500">
-        {isRecording ? 'Listening...' : isProcessing ? 'Processing...' : 'Hold to Speak'}
-      </span>
+      <div style={{ marginTop: "20px", fontSize: "18px", minHeight: "30px", color: "gray" }}>
+        {transcript}
+      </div>
     </div>
   );
-};
-
-export default MicButton;
+}

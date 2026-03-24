@@ -30,6 +30,8 @@ const LegalStrategyCard = ({ strategy, languageCode }) => {
     }
   };
 
+  const steps = strategy?.defence_steps || (strategy?.explanation ? strategy.explanation.split('\n').filter(s => s.trim() !== '') : []);
+
   const fetchAndPlayTTS = async (text) => {
     try {
       const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
@@ -49,7 +51,7 @@ const LegalStrategyCard = ({ strategy, languageCode }) => {
   };
 
   useEffect(() => {
-    if (strategy?.defence_steps && strategy.defence_steps.length > 0) {
+    if (steps.length > 0) {
       playAllSteps();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -58,9 +60,9 @@ const LegalStrategyCard = ({ strategy, languageCode }) => {
   const playAllSteps = async () => {
     if (isPlaying) return;
     setIsPlaying(true);
-    for (let i = 0; i < strategy.defence_steps.length; i++) {
+    for (let i = 0; i < steps.length; i++) {
       setCurrentStepIndex(i);
-      await fetchAndPlayTTS(strategy.defence_steps[i]);
+      await fetchAndPlayTTS(steps[i]);
     }
     setCurrentStepIndex(-1); // Resets when finished
     setIsPlaying(false);
@@ -103,7 +105,7 @@ const LegalStrategyCard = ({ strategy, languageCode }) => {
       </div>
 
       <div className="flex-grow space-y-4 mb-8">
-        {strategy.defence_steps.map((step, idx) => (
+        {steps.map((step, idx) => (
           <div 
             key={idx} 
             className={`p-4 rounded-xl border transition-all duration-300 ${
