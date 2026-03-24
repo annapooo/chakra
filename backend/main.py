@@ -34,6 +34,9 @@ SARVAM_API_KEY = os.getenv("SARVAM_API_KEY")
 MONGO_URL = os.getenv("MONGODB_URL")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
+TWILIO_FROM_NUMBER = os.getenv("TWILIO_FROM_NUMBER")
 
 if not SARVAM_API_KEY:
     raise ValueError("Missing SARVAM_API_KEY")
@@ -170,6 +173,41 @@ async def tts(req: TTSRequest):
 
 
 # =========================
+# 📊 Recent Case Topics
+# =========================
+@app.get("/cases/recent")
+async def get_recent_cases(limit: int = 8):
+    """Returns the most recent cases for the dashboard topics widget."""
+    try:
+        cursor = cases_collection.find(
+            {},
+            {
+                "_id": 0,
+                "user_text": 1,
+                "matched_sections": 1,
+                "status": 1,
+                "created_at": 1,
+            }
+        ).sort("created_at", -1).limit(limit)
+
+        cases = await cursor.to_list(length=limit)
+
+        result = []
+        for c in cases:
+            result.append({
+                "topic": c.get("user_text", "Unknown")[:80],
+                "section": (c.get("matched_sections") or ["—"])[0],
+                "status": c.get("status", "active_strategy"),
+                "created_at": c["created_at"].isoformat() if c.get("created_at") else None,
+            })
+
+        return {"cases": result, "total": len(result)}
+    except Exception as e:
+        print(f"Error fetching recent cases: {e}")
+        return {"cases": [], "total": 0}
+
+
+# =========================
 # ⚖️ RAG Query (Groq Powered)
 # =========================
 @app.post("/rag/query")
@@ -235,7 +273,24 @@ Text: {req.text}
             "explanation": "Try rephrasing your query"
         }
 
-    top_result = retrieved_sections[0]
+    # 🔹 Dual-Agent Pipeline
+    # 1. Groq summarizes the law into a tactical evasion defense
+    all_context = "\n\n".join([f"{s.get('section_title')}: {s.get('section_text')}" for s in retrieved_sections])
+    
+    groq_defense_prompt = f"""
+You are an elite legal defense tactician. Relying strictly on the following Indian Law sections:
+{all_context}
+
+User's Incident: {english_intent}
+
+Consolidate a highly strategic defense summary highlighting EXACTLY how the person can use these specific laws to legally EVADE fines or punishment. Focus on technicalities, procedural loopholes, and direct rights. 
+Return ONLY the tactical English summary.
+"""
+    groq_res = groq_client.chat.completions.create(
+        messages=[{"role": "user", "content": groq_defense_prompt}],
+        model="llama-3.3-70b-versatile"
+    )
+    defense_summary = groq_res.choices[0].message.content.strip()
 
     lang_map = {
         "hi-IN": "Hindi",
@@ -250,41 +305,117 @@ Text: {req.text}
         "gu-IN": "Gujarati",
         "en-IN": "English"
     }
-    human_lang = lang_map.get(req.language_code, req.language_code)
 
-    # 🔹 Prompt for AI
-    prompt = f"""
-You are an expert lawyer advising a client entirely in {human_lang}.
-Explain the legal situation below natively in {human_lang} script. Absolutely NO English words or Romanized/transliterated text.
+    # Honor explicit selection; if "auto" let Gemini detect from the user's text
+    if req.language_code in lang_map:
+        human_lang = lang_map[req.language_code]
+        lang_instruction = f"Respond ONLY in {human_lang}. Absolutely NO other language."
+    else:
+        human_lang = "auto"
+        lang_instruction = (
+            f"The user typed: '{req.text}'. "
+            "Detect the language or dialect they are using (e.g. Tamil, Tanglish, Hindi, Hinglish, English, Telugu, etc.) "
+            "and reply in that EXACT same language and style. "
+            "If they wrote in Tanglish (Tamil in Latin script), reply in Tanglish. "
+            "If they wrote in Tamil script, reply in Tamil script. Match their language exactly."
+        )
+        print(f"🌐 Language set to auto-detect from user input")
 
-Law Context: {top_result.get("section_title")} - {top_result.get("section_text")}
-User Situation: {english_intent}
+    # 2. Gemini acts as a humanized decision agent, returning structured JSON
+    gemini_prompt = f"""You are a knowledgeable, caring legal friend helping someone navigate a tough situation in India. You know Indian law well and want to genuinely help.
 
-Provide exactly two parts cleanly in {human_lang}:
-1. A short, simple explanation of the law.
-2. 3 simple, actionable steps the user should take.
+User situation: {english_intent}
 
-Format as plain sentences separated by newlines. Do not use Markdown, bolding, or English list artifacts.
-"""
+Relevant law: {defense_summary}
 
-    # 🔹 Groq call
-    response = groq_client.chat.completions.create(
-        messages=[
-            {"role": "system", "content": f"You are a helpful legal assistant that strictly replies in {human_lang} script only."},
-            {"role": "user", "content": prompt}
-        ],
-        model="llama-3.3-70b-versatile"
-    )
+Your job: Give a clear, warm, helpful reply — like a trusted friend who happens to know the law. 
+Explain what they should actually do, step by step if needed. Be honest about whether their situation is serious or manageable.
 
-    ai_text = response.choices[0].message.content
+LANGUAGE RULE: {lang_instruction}
+
+RULES:
+- Warm, calm, encouraging tone — never rude or dismissive
+- Include actual facts and procedures from the law — don't be vague
+- Keep it under 120 words — clear and focused, not overwhelming
+- Use natural sentences, avoid bullet lists or headers
+- If you need more information, ask 1-2 specific questions in a friendly way
+- If the situation is fine, reassure them clearly
+- If they need to take action, tell them exactly what to do
+
+ESCALATION: If this genuinely requires action on a government portal OR a police call, add ONE escalation. Pick the MOST RELEVANT option from this list based on the user's situation:
+
+CALLS:
+- Police emergency: type="call", label="Call Police", target="+919952140455"
+- Traffic police: type="call", label="Call Traffic Police", target="+919952140455"
+
+PORTALS — pick the ONE most relevant:
+- Traffic challan dispute / contest a challan: type="portal", label="Contest Challan on Virtual Court", target="https://vcourts.gov.in/"
+- Pay traffic challan online: type="portal", label="Pay Challan on Parivahan", target="https://echallan.parivahan.gov.in/"
+- Driving licence services (renewal, duplicate, issue): type="portal", label="Driving Licence Services", target="https://sarathi.parivahan.gov.in/"
+- Vehicle registration / RC related / ownership transfer: type="portal", label="Vehicle Registration – Parivahan", target="https://vahan.parivahan.gov.in/"
+- General Parivahan / transport services: type="portal", label="Parivahan Portal", target="https://parivahan.gov.in/parivahan/"
+- Consumer complaint (product defect, service fraud, overcharging): type="portal", label="File Consumer Complaint", target="https://consumerhelpline.gov.in/"
+- Online consumer forum / NCDRC: type="portal", label="Consumer Forum – eDaakhil", target="https://edaakhil.nic.in/"
+- File an FIR online / cybercrime complaint: type="portal", label="File FIR / Cybercrime Complaint", target="https://www.ncrp.in/"
+- RTI – Right to Information request: type="portal", label="File RTI Online", target="https://rtionline.gov.in/"
+- eCourts – check case status / hearings: type="portal", label="Check Case Status – eCourts", target="https://services.ecourts.gov.in/"
+- Free legal aid / NALSA: type="portal", label="Get Free Legal Aid – NALSA", target="https://nalsa.gov.in/"
+- Labour dispute / PF / ESI: type="portal", label="Labour Grievance Portal", target="https://grievance.epfindia.gov.in/"
+- Income tax / tax related: type="portal", label="Income Tax Portal", target="https://www.incometax.gov.in/"
+- Property / land records dispute: type="portal", label="Bhulekh Land Records", target="https://bhulekh.mahabhumi.gov.in/"
+- Passport / visa services: type="portal", label="Passport Seva Portal", target="https://www.passportindia.gov.in/"
+
+Only escalate if genuinely necessary. Choose ONLY one escalation option.
+
+Return ONLY valid JSON, nothing else:
+{{
+  "message": "<your warm, clear, factual reply>",
+  "escalation": null
+}}
+
+OR if escalation needed:
+{{
+  "message": "<your warm, clear, factual reply>",
+  "escalation": {{
+    "type": "call" or "portal",
+    "label": "<button label>",
+    "target": "<phone number or URL>"
+  }}
+}}"""
+    try:
+        gemini_model = genai.GenerativeModel('gemini-2.5-flash')
+        raw = await gemini_model.generate_content_async(gemini_prompt)
+        raw_text = raw.text.strip()
+    except Exception as e:
+        print(f"⚠️ Gemini Quota Exceeded. Falling back to Groq: {e}")
+        fb = groq_client.chat.completions.create(
+            messages=[{"role": "user", "content": gemini_prompt}],
+            model="llama-3.3-70b-versatile"
+        )
+        raw_text = fb.choices[0].message.content.strip()
+
+    # Parse the JSON response
+    ai_text = raw_text
+    escalation = None
+    try:
+        # Strip markdown code fences if present
+        clean = raw_text.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+        parsed = json.loads(clean)
+        ai_text = parsed.get("message", raw_text)
+        escalation = parsed.get("escalation", None)
+    except Exception:
+        print(f"⚠️ Could not parse Gemini JSON, using raw text.")
 
     # 🔹 Save Case Log seamlessly
     try:
+        top_result = retrieved_sections[0] if retrieved_sections else {}
+        matched_title = top_result.get("section_title", "Unknown Section")
+        
         case_doc = {
             "user_id": "demo-user-001",
             "input_story": english_intent,
             "language_code": human_lang,
-            "matched_sections": [top_result.get("section_title", "")],
+            "matched_sections": [matched_title],
             "defence_steps": [ai_text],
             "reference_id": f"REF-PARI-{str(uuid.uuid4())[:6].upper()}",
             "status": "active_strategy",
@@ -293,10 +424,12 @@ Format as plain sentences separated by newlines. Do not use Markdown, bolding, o
         await cases_collection.insert_one(case_doc)
     except Exception as dberr:
         print(f"Error logging case to DB: {dberr}")
+        matched_title = "Unknown Section"
 
     return {
-        "matched_section": top_result.get("section_title", ""),
-        "explanation": ai_text
+        "matched_section": matched_title,
+        "explanation": ai_text,
+        "escalation": escalation
     }
 
 
@@ -318,21 +451,96 @@ async def chat_followup(req: ChatFollowUpRequest):
         "gu-IN": "Gujarati",
         "en-IN": "English"
     }
-    human_lang = lang_map.get(req.language_code, req.language_code)
+
+    # Honor explicit selection; for "auto" instruct the model to detect from user text
+    if req.language_code in lang_map:
+        human_lang = lang_map[req.language_code]
+        lang_instruction = f"You MUST respond entirely in {human_lang}. Absolutely NO other language."
+    else:
+        # Find last user message to give model context for detection
+        last_user_text = next((m.content for m in reversed(req.messages) if m.role == "user"), "")
+        human_lang = "auto"
+        lang_instruction = (
+            f"The user's last message was: '{last_user_text}'. "
+            "Detect what language or dialect they are using (Tamil, Tanglish, Hindi, Hinglish, English, Telugu, etc.) "
+            "and reply in that EXACT same language and style. Match their language exactly."
+        )
+        print(f"🌐 Chat followup: language set to auto-detect")
 
     formatted_msgs = [
-        {"role": "system", "content": f"You are an expert Indian lawyer helping the user fight a legal case or traffic challan issue. Strongly defend them using valid Indian legal concepts. You MUST respond entirely in {human_lang} script. Absolutely NO English words or transliterated roman script unless human_lang is English."}
+        {
+            "role": "system",
+            "content": (
+                f"You are a knowledgeable, warm Indian legal assistant helping someone deal with a legal issue or traffic case. "
+                f"Be supportive and clear — like a helpful friend who knows the law, not an aggressive debater. "
+                f"Give factual, procedurally correct advice. Explain what they should actually do. "
+                f"Keep responses conversational and focused — around 3-4 sentences max, no walls of text. "
+                f"{lang_instruction}"
+            )
+        }
     ]
-    
+
     for m in req.messages:
         formatted_msgs.append({"role": m.role, "content": m.content})
-        
+
     response = groq_client.chat.completions.create(
         messages=formatted_msgs,
         model="llama-3.3-70b-versatile"
     )
 
     return {"reply": response.choices[0].message.content}
+
+
+# =========================
+# 🚨 Emergency Helpline Call via Twilio
+# =========================
+@app.post("/emergency/call")
+async def emergency_call(data: dict):
+    """
+    Places a Twilio call to the user's phone.
+    When they answer, bridges them to the target helpline number.
+    """
+    user_phone = data.get("user_phone")  # e.g. "+919876543210"
+    helpline = data.get("helpline", "+919952140455")  # dummy emergency number
+    helpline_name = data.get("helpline_name", "Traffic Police Helpline")
+
+    if not user_phone:
+        raise HTTPException(status_code=400, detail="user_phone is required")
+
+    if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN or not TWILIO_FROM_NUMBER:
+        raise HTTPException(
+            status_code=503,
+            detail="Twilio credentials not configured. Add TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER to .env"
+        )
+
+    try:
+        from twilio.rest import Client as TwilioClient
+        twilio = TwilioClient(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+
+        # TwiML: greet the user then connect to helpline
+        twiml = f"""
+        <Response>
+            <Say voice="woman" language="en-IN">
+                This is Chakravyuha Legal Assistant. We are now connecting you to {helpline_name}. Please hold.
+            </Say>
+            <Dial callerId="{TWILIO_FROM_NUMBER}">
+                <Number>{helpline}</Number>
+            </Dial>
+        </Response>
+        """.strip()
+
+        call = twilio.calls.create(
+            to=user_phone,
+            from_=TWILIO_FROM_NUMBER,
+            twiml=twiml
+        )
+
+        print(f"📞 Emergency call placed: SID={call.sid} to={user_phone} helpline={helpline}")
+        return {"success": True, "call_sid": call.sid, "message": f"Calling {user_phone}. Connecting to {helpline_name}."}
+
+    except Exception as e:
+        print(f"❌ Twilio call failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # =========================

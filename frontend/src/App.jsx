@@ -8,6 +8,81 @@ import MicButton from './components/MicButton';
 import TranscriptBox from './components/TranscriptBox';
 import LegalStrategyCard from './components/LegalStrategyCard';
 import CaseTracker from './components/CaseTracker';
+import EmergencyCallModal from './components/EmergencyCallModal';
+import PortalRedirectModal from './components/PortalRedirectModal';
+
+// ─── Recent Topics Widget ───────────────────────────────────────────────────
+function timeAgo(isoString) {
+  if (!isoString) return '';
+  const diff = Math.floor((Date.now() - new Date(isoString)) / 1000);
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+
+function RecentTopicsCard({ activeView }) {
+  const [cases, setCases] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    if (activeView !== 'dashboard') return;
+    setLoading(true);
+    const API_URL = import.meta.env.VITE_APP_API_URL || `http://${window.location.hostname}:8000`;
+    fetch(`${API_URL}/cases/recent?limit=6`)
+      .then(r => r.json())
+      .then(d => { setCases(d.cases || []); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [activeView]);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 30 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.5 }}
+      className="bg-zinc-900/40 border border-yellow-900/30 rounded-3xl p-6 md:p-8 flex flex-col backdrop-blur-md relative overflow-hidden lg:col-span-2"
+    >
+      <div className="absolute top-[-50%] right-[-10%] w-96 h-96 bg-yellow-600/5 rounded-full blur-3xl pointer-events-none" />
+      <div className="flex items-center justify-between mb-5 relative z-10">
+        <div>
+          <h3 className="text-xl md:text-2xl font-bold text-zinc-100 tracking-wide">Recent Topics</h3>
+          <p className="text-zinc-500 text-xs mt-1 uppercase tracking-widest">Your last {cases.length || '—'} queries</p>
+        </div>
+        <span className="flex items-center gap-2 px-3 py-1 bg-yellow-500/10 border border-yellow-500/20 rounded-full text-[10px] text-yellow-400 font-bold tracking-widest uppercase">
+          <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" /> Live
+        </span>
+      </div>
+
+      <div className="relative z-10 flex flex-col gap-2">
+        {loading && (
+          <div className="flex items-center gap-3 py-4">
+            <div className="w-4 h-4 border-2 border-yellow-500 border-t-transparent rounded-full animate-spin" />
+            <p className="text-zinc-500 text-sm">Loading case history...</p>
+          </div>
+        )}
+        {!loading && cases.length === 0 && (
+          <p className="text-zinc-600 text-sm italic py-4">No cases yet. Start a conversation to see your history here.</p>
+        )}
+        {!loading && cases.map((c, i) => (
+          <div key={i} className="flex items-start gap-3 bg-zinc-800/40 border border-zinc-700/30 rounded-2xl px-4 py-3 hover:border-yellow-700/30 transition-colors">
+            <span className="mt-0.5 w-6 h-6 shrink-0 rounded-full bg-yellow-900/40 border border-yellow-700/30 flex items-center justify-center text-[10px] text-yellow-500 font-bold">{i + 1}</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-zinc-200 text-sm font-medium truncate">{c.topic}</p>
+              {c.section && c.section !== '—' && (
+                <span className="inline-block mt-1 text-[10px] px-2 py-0.5 rounded-full bg-indigo-900/40 border border-indigo-700/30 text-indigo-300 font-semibold tracking-wide">
+                  {c.section}
+                </span>
+              )}
+            </div>
+            <span className="text-zinc-600 text-[10px] shrink-0 mt-0.5">{timeAgo(c.created_at)}</span>
+          </div>
+        ))}
+      </div>
+    </motion.div>
+  );
+}
+// ────────────────────────────────────────────────────────────────────────────
+
 
 export default function App() {
   const [activeView, setActiveView] = useState("landing");
@@ -18,7 +93,11 @@ export default function App() {
   const [dialect, setDialect] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [textInput, setTextInput] = useState("");
+  const [emergencyEscalation, setEmergencyEscalation] = useState(null);
+  const [portalEscalation, setPortalEscalation] = useState(null);
   const messagesEndRef = useRef(null);
+  const audioRef = useRef(null);
+  const isFetchingRef = useRef(false);
 
   // Manage the transition phase timing
   useEffect(() => {
@@ -37,6 +116,45 @@ export default function App() {
   useEffect(() => {
     scrollToBottom();
   }, [transcriptData, isAnalyzing, strategyData, chatHistory]);
+
+  const playAudio = async (text, langCode) => {
+    // 🔒 If a TTS fetch is already in flight, drop this call — prevents overlap
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
+
+    const API_URL = import.meta.env.VITE_APP_API_URL || `http://${window.location.hostname}:8000`;
+    try {
+      // Stop any currently playing audio immediately
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.src = "";
+      }
+
+      const res = await fetch(`${API_URL}/tts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, language_code: langCode })
+      });
+      const data = await res.json();
+
+      if (!data.audio_base64) return;
+
+      const audio = new Audio(`data:audio/wav;base64,${data.audio_base64}`);
+      audioRef.current = audio;
+      audio.onended = () => { isFetchingRef.current = false; };
+      audio.onerror = () => { isFetchingRef.current = false; };
+
+      try {
+        await audio.play();
+      } catch (err) {
+        isFetchingRef.current = false;
+        console.warn("Audio play prevented:", err);
+      }
+    } catch (err) {
+      isFetchingRef.current = false;
+      console.error("TTS playback error:", err);
+    }
+  };
 
   const handleTranscript = async (transcript, langCode, detectedDialect = "") => {
     const API_URL = import.meta.env.VITE_APP_API_URL || `http://${window.location.hostname}:8000`;
@@ -65,6 +183,11 @@ export default function App() {
         });
         const data = await response.json();
         setStrategyData(data);
+        
+        // Oracle speaks its tactical defense logic!
+        if (data.explanation) {
+            playAudio(data.explanation, langCode);
+        }
         
         // Seed chat history so Oracle context knows the origin strategy
         setChatHistory([
@@ -100,6 +223,10 @@ export default function App() {
          });
          const data = await response.json();
          setChatHistory(prev => [...prev, { role: "assistant", content: data.reply }]);
+         
+         if (data.reply) {
+             playAudio(data.reply, langCode);
+         }
       } catch (err) {
          console.error("Chat Error:", err);
       } finally {
@@ -344,66 +471,32 @@ export default function App() {
                     <Globe className="w-6 h-6 md:w-7 md:h-7 text-yellow-600" />
                   </div>
                   <h3 className="text-xl md:text-2xl font-bold text-zinc-100 mb-3 tracking-wide">Voice Settings</h3>
-                  <p className="text-zinc-400 text-sm leading-relaxed font-light mb-6">
-                    Set communication protocol. Used directly inside the Chat Interface.
+                  <p className="text-zinc-400 text-sm leading-relaxed font-light mb-5">
+                    Choose the language Oracle will respond in. Set to Auto to detect from your input.
                   </p>
-                  <div className="flex flex-wrap gap-2 md:gap-3">
-                    {[
-                      { code: 'auto', label: 'AUTO DETECT' },
-                      { code: 'en-IN', label: 'ENGLISH' },
-                      { code: 'hi-IN', label: 'HINDI' },
-                      { code: 'ta-IN', label: 'TAMIL' },
-                      { code: 'te-IN', label: 'TELUGU' },
-                    ].map(lang => (
-                      <button 
-                        key={lang.code}
-                        onClick={() => setLanguageCode(lang.code)}
-                        className={`px-3 py-1.5 rounded-lg text-[10px] md:text-[11px] font-bold tracking-widest transition-colors cursor-pointer ${
-                          languageCode === lang.code 
-                            ? 'bg-yellow-500/20 border border-yellow-500/40 text-yellow-300 shadow-[0_0_10px_rgba(234,179,8,0.3)]' 
-                            : 'bg-white/5 border border-white/10 text-zinc-400 hover:text-white hover:bg-white/10'
-                        }`}
-                      >
-                        {lang.label}
-                      </button>
-                    ))}
-                  </div>
+                  <select
+                    value={languageCode}
+                    onChange={e => setLanguageCode(e.target.value)}
+                    className="w-full bg-zinc-800/80 border border-yellow-700/30 text-zinc-100 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:border-yellow-500/60 focus:ring-1 focus:ring-yellow-500/30 transition-all cursor-pointer appearance-none"
+                    style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 1rem center' }}
+                  >
+                    <option value="auto">🌐 Auto Detect (recommended)</option>
+                    <option value="en-IN">🇮🇳 English (India)</option>
+                    <option value="hi-IN">🇮🇳 Hindi — हिंदी</option>
+                    <option value="ta-IN">🇮🇳 Tamil — தமிழ்</option>
+                    <option value="te-IN">🇮🇳 Telugu — తెలుగు</option>
+                    <option value="kn-IN">🇮🇳 Kannada — ಕನ್ನಡ</option>
+                    <option value="ml-IN">🇮🇳 Malayalam — മലയാളം</option>
+                    <option value="mr-IN">🇮🇳 Marathi — मराठी</option>
+                    <option value="bn-IN">🇮🇳 Bengali — বাংলা</option>
+                    <option value="gu-IN">🇮🇳 Gujarati — ગુજરાતી</option>
+                    <option value="pa-IN">🇮🇳 Punjabi — ਪੰਜਾਬੀ</option>
+                  </select>
                 </div>
               </motion.div>
 
-              {/* 5. AI Assistant Status */}
-              <motion.div
-                initial={{ opacity: 0, y: 30 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.5 }}
-                className="bg-zinc-900/40 border border-yellow-900/30 rounded-3xl p-6 md:p-8 flex flex-col justify-between transition-all group backdrop-blur-md relative overflow-hidden lg:col-span-2"
-              >
-                <div className="absolute top-[-50%] right-[-10%] w-96 h-96 bg-yellow-600/5 rounded-full blur-3xl transition-colors pointer-events-none" />
-                <div className="flex flex-col md:flex-row gap-6 md:gap-8 items-center md:items-start h-full pb-4">
-                  <div className="w-16 h-16 md:w-20 md:h-20 shrink-0 rounded-2xl bg-[#080808] border border-yellow-500/50 flex items-center justify-center shadow-[0_0_20px_rgba(234,179,8,0.2)]">
-                    <Bot className="w-8 h-8 md:w-10 md:h-10 text-yellow-500 animate-pulse" />
-                  </div>
-                  <div className="text-center md:text-left flex-1 w-full">
-                    <div className="flex flex-col md:flex-row items-center justify-center md:justify-start gap-4 mb-3">
-                      <h3 className="text-xl md:text-2xl font-bold text-zinc-100 tracking-wide">Warrior Core AI</h3>
-                      <span className="flex items-center gap-2 px-3 py-1 bg-green-500/10 border border-green-500/20 rounded-full text-[10px] text-green-400 font-bold tracking-widest uppercase shadow-[0_0_10px_rgba(34,197,94,0.2)]">
-                        <span className="w-2 h-2 rounded-full bg-green-500 animate-[pulse_1.5s_ease-in-out_infinite]" /> Online & Listening
-                      </span>
-                    </div>
-                    <p className="text-zinc-400 text-sm md:text-base leading-relaxed font-light mb-6 max-w-xl mx-auto md:mx-0">
-                      Tactical systems fully operational. The AI is standing by to process penal codes, draft notices, or analyze dispute parameters in real-time.
-                    </p>
-                    <div className="w-full h-1 bg-zinc-800 rounded-full overflow-hidden">
-                      <motion.div 
-                        initial={{ x: "-100%" }}
-                        animate={{ x: "100%" }}
-                        transition={{ duration: 2.5, repeat: Infinity, ease: "linear" }}
-                        className="w-1/2 h-full bg-gradient-to-r from-transparent via-yellow-500 to-transparent"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
+              {/* 5. Recent Topics */}
+              <RecentTopicsCard activeView={activeView} />
 
             </main>
           </motion.div>
@@ -417,7 +510,7 @@ export default function App() {
             animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
             exit={{ opacity: 0, x: -50 }}
             transition={{ duration: 0.6 }}
-            className="min-h-screen w-full flex flex-col bg-[#030303] text-white"
+            className="h-screen w-full flex flex-col bg-[#030303] text-white overflow-hidden"
           >
             {/* Chat Header */}
             <header className="p-4 md:p-6 border-b border-yellow-900/30 flex justify-between items-center bg-black/60 backdrop-blur-lg sticky top-0 z-50">
@@ -436,7 +529,7 @@ export default function App() {
             </header>
 
             {/* Chat History Area */}
-            <main className="flex-1 w-full max-w-4xl mx-auto p-4 md:p-8 flex flex-col gap-6 overflow-y-auto custom-scrollbar pb-40">
+            <main className="flex-1 min-h-0 w-full max-w-4xl mx-auto px-4 md:px-8 pt-4 md:pt-6 flex flex-col gap-6 overflow-y-auto pb-36">
               
               {!strategyData && chatHistory.length === 0 && (
                 <div className="flex justify-start">
@@ -460,15 +553,30 @@ export default function App() {
 
               {strategyData && (
                  <div className="flex justify-start animate-fade-in-up mt-4">
-                   <div className="max-w-[95%] text-left bg-zinc-900 border border-yellow-900/50 rounded-2xl p-2 md:p-4 shadow-xl">
-                      <p className="text-sm font-bold text-yellow-500 mb-4 uppercase tracking-wider ml-4 mt-2">Oracle Strategy Protocol</p>
-                      <div className="text-black bg-zinc-100 rounded-xl p-2 sm:p-4">
-                        <LegalStrategyCard 
-                          strategy={strategyData} 
-                          languageCode={transcriptData?.language_code || languageCode}
-                        />
-                      </div>
-                   </div>
+                    <div className="max-w-[80%] rounded-2xl p-5 shadow-lg bg-zinc-900 border border-yellow-900/30 text-left">
+                       <p className="text-sm font-bold mb-2 uppercase tracking-wider text-yellow-600">Oracle</p>
+                       <p className="text-zinc-200 font-medium whitespace-pre-wrap leading-relaxed">{strategyData.explanation}</p>
+                       {strategyData.escalation && (
+                         <button
+                           onClick={() => {
+                             const e = strategyData.escalation;
+                             if (e.type === 'call') {
+                               setEmergencyEscalation(e);
+                             } else {
+                               setPortalEscalation(e);
+                             }
+                           }}
+                           className={`mt-4 flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-white text-sm transition-all active:scale-95 ${
+                             strategyData.escalation.type === 'call'
+                               ? 'bg-red-600 hover:bg-red-700 shadow-[0_0_15px_rgba(239,68,68,0.3)]'
+                               : 'bg-indigo-700 hover:bg-indigo-800 shadow-[0_0_15px_rgba(99,102,241,0.3)]'
+                           }`}
+                         >
+                           {strategyData.escalation.type === 'call' ? '🚨 ' : '🔗 '}
+                           {strategyData.escalation.label}
+                         </button>
+                       )}
+                    </div>
                  </div>
               )}
 
@@ -560,6 +668,18 @@ export default function App() {
         {activeView === "archives" && <CaseTracker setActiveView={setActiveView} />}
 
       </AnimatePresence>
+
+      {/* Emergency Call Modal */}
+      <EmergencyCallModal
+        escalation={emergencyEscalation}
+        onClose={() => setEmergencyEscalation(null)}
+      />
+
+      {/* Portal Redirect Modal */}
+      <PortalRedirectModal
+        escalation={portalEscalation}
+        onClose={() => setPortalEscalation(null)}
+      />
     </div>
   );
 }
