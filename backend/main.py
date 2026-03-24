@@ -64,27 +64,51 @@ app.add_middleware(
 )
 
 # =========================
-# 🎤 Speech to Text
+# 🎤 Speech to Text with Auto Language Detection
 # =========================
 @app.post("/stt")
-async def stt(file: UploadFile = File(...), language_code: str = Form("ta-IN")):
+async def stt(file: UploadFile = File(...), language_code: str = Form(None)):
+    """
+    Speech to Text with auto language & dialect detection.
+    
+    - If language_code provided: use it
+    - If not: auto-detect via Sarvam
+    
+    Returns: transcript, detected_language_code, dialect (if available)
+    """
     url = "https://api.sarvam.ai/speech-to-text"
     headers = {"api-subscription-key": SARVAM_API_KEY}
 
     file_content = await file.read()
     files = {"file": (file.filename, file_content, file.content_type)}
-    data = {"model": "saarika:v2", "language_code": language_code}
+    
+    # Build request data
+    data = {"model": "saarika:v2"}
+    
+    # If language_code provided, use it; otherwise let Sarvam auto-detect
+    if language_code:
+        data["language_code"] = language_code
+    else:
+        # Empty language_code triggers auto-detection in Sarvam API
+        data["language_code"] = ""
 
     async with httpx.AsyncClient() as client:
-        response = await client.post(url, headers=headers, data=data, files=files)
+        response = await client.post(url, headers=headers, data=data, files=files, timeout=60.0)
 
     if response.status_code != 200:
         raise HTTPException(status_code=response.status_code, detail=response.text)
 
     result = response.json()
+    
+    # Extract detected language and dialect from Sarvam response
+    detected_language = result.get("language_code", language_code or "unknown")
+    dialect = result.get("dialect", "")  # Sarvam may return dialect info
+    
     return {
         "transcript": result.get("transcript", ""),
-        "language_code": language_code
+        "language_code": detected_language,
+        "dialect": dialect,
+        "confidence": result.get("confidence", None)  # Sarvam may include confidence score
     }
 
 

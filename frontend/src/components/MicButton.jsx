@@ -19,25 +19,30 @@ export default function MicButton({ onTranscript, languageCode }) {
       const audioBlob = new Blob(audioChunks, { type: "audio/wav" });
       const formData = new FormData();
       formData.append("file", audioBlob, "audio.wav");
-      if (languageCode) {
+      // Only add language_code if provided; otherwise let backend auto-detect
+      if (languageCode && languageCode !== "auto") {
         formData.append("language_code", languageCode);
       }
 
       try {
-        const response = await fetch("http://localhost:8000/stt", {
+        const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+        const response = await fetch(`${API_URL}/stt`, {
           method: "POST",
           body: formData,
         });
 
         const data = await response.json();
         const finalTranscript = data.transcript || data.text || "";
-        console.log("STT Result:", finalTranscript);
+        const detectedLanguage = data.language_code || languageCode;
+        const dialect = data.dialect || "";
+        
+        console.log("STT Result:", { finalTranscript, detectedLanguage, dialect });
         
         setTranscript(finalTranscript); // Show transcript locally
         
-        // Fix: Call the callback to pass data up to App.jsx
+        // Call the callback with transcript, detected language, and dialect
         if (onTranscript) {
-          onTranscript(finalTranscript, data.language_code || languageCode);
+          onTranscript(finalTranscript, detectedLanguage, dialect);
         }
       } catch (err) {
         console.error("STT failed", err);

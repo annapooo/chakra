@@ -8,10 +8,17 @@ function App() {
   const [transcriptData, setTranscriptData] = useState(null);
   const [strategyData, setStrategyData] = useState(null);
   const [languageCode, setLanguageCode] = useState("ta-IN");
+  const [dialect, setDialect] = useState("");
 
-  const handleTranscript = (transcript, langCode) => {
-    setTranscriptData({ transcript, language_code: langCode });
+  const handleTranscript = (transcript, langCode, detectedDialect = "") => {
+    setTranscriptData({ 
+      transcript, 
+      language_code: langCode,
+      dialect: detectedDialect
+    });
     setLanguageCode(langCode);
+    setDialect(detectedDialect);
+    console.log("Detected Language:", langCode, "Dialect:", detectedDialect);
   };
 
   const handleStrategyReceived = (data) => {
@@ -51,6 +58,7 @@ function App() {
                 <TranscriptBox 
                   transcript={transcriptData.transcript} 
                   languageCode={transcriptData.language_code}
+                  dialect={transcriptData.dialect}
                   onStrategyReceived={handleStrategyReceived}
                 />
               </div>

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-const TranscriptBox = ({ transcript, languageCode, onStrategyReceived }) => {
+const TranscriptBox = ({ transcript, languageCode, dialect, onStrategyReceived }) => {
   const [isFetchingStrategy, setIsFetchingStrategy] = useState(false);
 
   const handleGetHelp = async () => {
@@ -14,12 +14,14 @@ const TranscriptBox = ({ transcript, languageCode, onStrategyReceived }) => {
         },
         body: JSON.stringify({
           text: transcript,
-          language_code: languageCode
+          language_code: languageCode,
+          dialect: dialect || ""
         }),
       });
 
       if (response.ok) {
         const data = await response.json();
+        console.log("RAG Response:", data);
         onStrategyReceived(data);
       } else {
         console.error("Failed to query RAG backend");
@@ -34,9 +36,17 @@ const TranscriptBox = ({ transcript, languageCode, onStrategyReceived }) => {
   return (
     <div className="bg-gray-50 rounded-xl p-6 border border-gray-200">
       <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-3">Live Transcript</h3>
-      <div className="bg-white p-4 rounded-lg min-h-[100px] text-gray-800 border border-gray-100 mb-6 shadow-inner text-lg">
+      <div className="bg-white p-4 rounded-lg min-h-[100px] text-gray-800 border border-gray-100 mb-4 shadow-inner text-lg">
         {transcript || <span className="text-gray-400 italic">No transcript available...</span>}
       </div>
+      
+      {/* Show detected language and dialect */}
+      {languageCode && (
+        <div className="text-xs text-gray-500 mb-4">
+          <span>Language: <strong>{languageCode}</strong></span>
+          {dialect && <span> | Dialect: <strong>{dialect}</strong></span>}
+        </div>
+      )}
       
       <button
         onClick={handleGetHelp}
