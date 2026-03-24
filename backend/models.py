@@ -35,3 +35,11 @@ class UserDetails(BaseModel):
 class AgentFillRequest(BaseModel):
     case_id: str
     user_details: UserDetails
+
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+class ChatFollowUpRequest(BaseModel):
+    language_code: str = "ta-IN"
+    messages: List[ChatMessage]

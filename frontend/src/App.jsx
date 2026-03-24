@@ -1,17 +1,109 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Mic, Scale, History, Globe, 
-  Bot, LineChart, ArrowUp, ChevronRight 
+  Bot, LineChart, ArrowUp, ChevronRight, ArrowLeft
 } from 'lucide-react';
+import MicButton from './components/MicButton';
+import TranscriptBox from './components/TranscriptBox';
+import LegalStrategyCard from './components/LegalStrategyCard';
+import CaseTracker from './components/CaseTracker';
 
 export default function App() {
-  const [showDashboard, setShowDashboard] = useState(false);
+  const [activeView, setActiveView] = useState("landing");
+  const [transcriptData, setTranscriptData] = useState(null);
+  const [strategyData, setStrategyData] = useState(null);
+  const [chatHistory, setChatHistory] = useState([]);
+  const [languageCode, setLanguageCode] = useState("auto");
+  const [dialect, setDialect] = useState("");
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [textInput, setTextInput] = useState("");
+  const messagesEndRef = useRef(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [transcriptData, isAnalyzing, strategyData, chatHistory]);
+
+  const handleTranscript = async (transcript, langCode, detectedDialect = "") => {
+    const API_URL = import.meta.env.VITE_APP_API_URL || `http://${window.location.hostname}:8000`;
+    
+    // 🔹 Route 1: Initial RAG Query
+    if (!strategyData) {
+      setTranscriptData({ 
+        transcript, 
+        language_code: langCode,
+        dialect: detectedDialect
+      });
+      setLanguageCode(langCode);
+      setDialect(detectedDialect);
+      
+      setIsAnalyzing(true);
+      
+      try {
+        const response = await fetch(`${API_URL}/rag/query`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: transcript,
+            language_code: langCode,
+            dialect: detectedDialect || ""
+          }),
+        });
+        const data = await response.json();
+        setStrategyData(data);
+        
+        // Seed chat history so Oracle context knows the origin strategy
+        setChatHistory([
+           { role: "user", content: transcript, langCode },
+           { role: "assistant", content: `[SYSTEM LOG]: Oracle generated initial strategy based on user context.` }
+        ]);
+      } catch (err) {
+        console.error("Strategy Fetch Error:", err);
+      } finally {
+        setIsAnalyzing(false);
+      }
+
+    // 🔹 Route 2: Ongoing Chat Flow
+    } else {
+      setChatHistory(prev => [...prev, { role: "user", content: transcript, langCode }]);
+      setIsAnalyzing(true);
+      
+      try {
+         // Limit history to last 6 messages to avoid context explosion
+         const limitedHistory = chatHistory.slice(-6).map(m => ({
+            role: m.role,
+            content: m.content
+         }));
+         limitedHistory.push({ role: "user", content: transcript });
+
+         const response = await fetch(`${API_URL}/chat/followup`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+               language_code: langCode,
+               messages: limitedHistory
+            }),
+         });
+         const data = await response.json();
+         setChatHistory(prev => [...prev, { role: "assistant", content: data.reply }]);
+      } catch (err) {
+         console.error("Chat Error:", err);
+      } finally {
+         setIsAnalyzing(false);
+      }
+    }
+  };
 
   return (
     <div className="min-h-screen w-full bg-[#030303] text-white font-sans overflow-hidden selection:bg-yellow-500/30">
       <AnimatePresence mode="wait">
-        {!showDashboard ? (
+        
+        {/* LANDING PAGE */}
+        {activeView === "landing" && (
           <motion.div
             key="landing"
             initial={{ opacity: 0 }}
@@ -20,7 +112,6 @@ export default function App() {
             transition={{ duration: 1.2, ease: "easeInOut" }}
             className="relative min-h-screen w-full flex flex-col items-center justify-center p-4 bg-black"
           >
-            {/* Background Image */}
             <div 
               className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-40 mix-blend-luminosity"
               style={{ backgroundImage: "url('https://img.freepik.com/premium-photo/illustration-lord-rama-silhouette-sunset_1102-19576.jpg')" }}
@@ -28,7 +119,6 @@ export default function App() {
               <div className="absolute inset-0 bg-gradient-to-t from-[#030303] via-transparent to-[#030303]" />
             </div>
 
-            {/* Chakravyuha Image over Background */}
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-50 overflow-hidden mix-blend-screen">
               <motion.img 
                 src="https://miro.medium.com/v2/resize:fit:1358/1*AJEnuy3jL0hdFj5Wwc0gGQ.png" 
@@ -40,7 +130,6 @@ export default function App() {
                 }}
                 className="w-[120vw] md:w-[80vw] lg:w-[50vw] max-w-[800px] object-contain drop-shadow-[0_0_15px_rgba(234,179,8,0.5)]"
               />
-              {/* Glowing Arrow in Center */}
               <motion.div 
                 animate={{ y: [0, -15, 0] }}
                 transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
@@ -50,7 +139,6 @@ export default function App() {
               </motion.div>
             </div>
 
-            {/* Content OVER the rings */}
             <div className="relative z-10 flex flex-col items-center text-center mt-20 p-6 md:p-12 w-full max-w-7xl mx-auto backdrop-blur-[2px] rounded-3xl">
               <motion.h1 
                 initial={{ opacity: 0, y: 40, filter: "blur(10px)" }}
@@ -80,7 +168,7 @@ export default function App() {
                   borderColor: "rgba(234,179,8,1)"
                 }}
                 whileTap={{ scale: 0.95 }}
-                onClick={() => setShowDashboard(true)}
+                onClick={() => setActiveView("dashboard")}
                 className="relative overflow-hidden px-10 md:px-16 py-4 md:py-6 border border-yellow-600/50 rounded-full bg-black/80 backdrop-blur-xl text-yellow-500 font-bold tracking-[0.2em] transition-all flex items-center gap-4 group uppercase text-xs md:text-base cursor-pointer shadow-[0_0_20px_rgba(234,179,8,0.15)]"
               >
                 <span className="relative z-10 flex items-center gap-3">
@@ -91,18 +179,20 @@ export default function App() {
               </motion.button>
             </div>
           </motion.div>
-        ) : (
+        )}
+
+        {/* DASHBOARD PAGE */}
+        {activeView === "dashboard" && (
           <motion.div
             key="dashboard"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
+            exit={{ opacity: 0, y: -20 }}
             transition={{ duration: 1 }}
             className="min-h-screen w-full relative bg-[#030303] p-4 sm:p-6 md:p-8 lg:p-12"
           >
-            {/* Ambient Background Glow for Dashboard */}
             <div className="fixed top-0 left-1/2 -translate-x-1/2 w-[800px] h-[600px] bg-yellow-900/15 blur-[150px] rounded-full pointer-events-none" />
 
-            {/* Header */}
             <header className="w-full max-w-7xl mx-auto flex flex-col sm:flex-row justify-between items-center mb-10 md:mb-12 relative z-10 border-b border-yellow-900/30 pb-6 gap-4 sm:gap-0">
               <div className="flex items-center gap-3 sm:gap-4">
                 <div className="w-10 h-10 md:w-12 md:h-12 rounded-full border border-yellow-500/40 flex items-center justify-center animate-pulse shadow-[0_0_20px_rgba(234,179,8,0.2)] bg-black/50 backdrop-blur-sm">
@@ -113,21 +203,21 @@ export default function App() {
                 </h2>
               </div>
               <button 
-                onClick={() => setShowDashboard(false)}
+                onClick={() => setActiveView("landing")}
                 className="px-6 py-2.5 border border-zinc-800 rounded-full text-xs md:text-sm tracking-widest text-zinc-400 hover:text-yellow-400 hover:border-yellow-600/50 hover:bg-yellow-900/20 transition-all uppercase cursor-pointer"
               >
                 Retreat
               </button>
             </header>
 
-            {/* Main Grid */}
             <main className="w-full max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 relative z-10">
               
-              {/* 1. Voice Input */}
+              {/* 1. Voice Input -> Routes to CHAT */}
               <motion.div
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.1 }}
+                onClick={() => setActiveView("chat")}
                 whileHover={{ y: -5, boxShadow: "0 15px 40px -15px rgba(234,179,8,0.3)" }}
                 className="bg-zinc-900/40 border border-yellow-900/30 hover:border-yellow-500/50 rounded-3xl p-6 md:p-8 flex flex-col justify-between transition-all cursor-pointer group backdrop-blur-md relative overflow-hidden"
               >
@@ -138,11 +228,11 @@ export default function App() {
                   </div>
                   <h3 className="text-xl md:text-2xl font-bold text-zinc-100 mb-3 tracking-wide">Speak Your Issue</h3>
                   <p className="text-zinc-400 text-sm leading-relaxed font-light">
-                    Initiate voice protocol. The AI oracle will transcribe and analyze your legal query instantly against known precedents.
+                    Initiate voice protocol. Enter the interactive Oracle Chat to transcribe your dispute.
                   </p>
                 </div>
                 <div className="mt-8 md:mt-10 flex items-center text-xs text-yellow-500/80 uppercase tracking-widest font-bold">
-                  Tap to Record <ChevronRight className="w-4 h-4 ml-1" />
+                  Open Chat Interface <ChevronRight className="w-4 h-4 ml-1" />
                 </div>
               </motion.div>
 
@@ -151,6 +241,7 @@ export default function App() {
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.2 }}
+                onClick={() => setActiveView("archives")}
                 whileHover={{ y: -5, boxShadow: "0 15px 40px -15px rgba(234,179,8,0.3)" }}
                 className="bg-zinc-900/40 border border-yellow-900/30 hover:border-yellow-500/50 rounded-3xl p-6 md:p-8 flex flex-col justify-between transition-all cursor-pointer group backdrop-blur-md relative overflow-hidden"
               >
@@ -161,7 +252,7 @@ export default function App() {
                   </div>
                   <h3 className="text-xl md:text-2xl font-bold text-zinc-100 mb-3 tracking-wide">Legal Strategy</h3>
                   <p className="text-zinc-400 text-sm leading-relaxed font-light">
-                    Formulate defense vectors. Generate step-by-step actionable legal strategies based on IPC/BNS structures.
+                    View active defense vectors logic. Re-examine the most recent strategy generated from your chats.
                   </p>
                 </div>
                 <div className="mt-8 md:mt-10 flex items-center text-xs text-yellow-500/80 uppercase tracking-widest font-bold">
@@ -174,6 +265,7 @@ export default function App() {
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.3 }}
+                onClick={() => setActiveView("archives")}
                 whileHover={{ y: -5, boxShadow: "0 15px 40px -15px rgba(234,179,8,0.3)" }}
                 className="bg-zinc-900/40 border border-yellow-900/30 hover:border-yellow-500/50 rounded-3xl p-6 md:p-8 flex flex-col justify-between transition-all cursor-pointer group backdrop-blur-md relative overflow-hidden"
               >
@@ -197,22 +289,37 @@ export default function App() {
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.4 }}
-                whileHover={{ y: -5, boxShadow: "0 15px 40px -15px rgba(234,179,8,0.3)" }}
-                className="bg-zinc-900/40 border border-yellow-900/30 hover:border-yellow-500/50 rounded-3xl p-6 md:p-8 flex flex-col justify-between transition-all cursor-pointer group backdrop-blur-md relative overflow-hidden"
+                className="bg-zinc-900/40 border border-yellow-900/30 rounded-3xl p-6 md:p-8 flex flex-col justify-between transition-all group backdrop-blur-md relative overflow-hidden"
               >
-                <div className="absolute top-[-50px] right-[-50px] w-48 h-48 bg-yellow-600/10 rounded-full blur-3xl group-hover:bg-yellow-500/20 transition-colors" />
+                <div className="absolute top-[-50px] right-[-50px] w-48 h-48 bg-yellow-600/10 rounded-full blur-3xl transition-colors" />
                 <div>
-                  <div className="w-14 h-14 md:w-16 md:h-16 rounded-2xl bg-[#080808] border border-yellow-700/30 flex items-center justify-center mb-6 shadow-inner group-hover:border-yellow-400/50 transition-all">
-                    <Globe className="w-6 h-6 md:w-7 md:h-7 text-yellow-600 group-hover:text-yellow-400" />
+                  <div className="w-14 h-14 md:w-16 md:h-16 rounded-2xl bg-[#080808] border border-yellow-700/30 flex items-center justify-center mb-6 shadow-inner">
+                    <Globe className="w-6 h-6 md:w-7 md:h-7 text-yellow-600" />
                   </div>
-                  <h3 className="text-xl md:text-2xl font-bold text-zinc-100 mb-3 tracking-wide">Linguistics</h3>
+                  <h3 className="text-xl md:text-2xl font-bold text-zinc-100 mb-3 tracking-wide">Voice Settings</h3>
                   <p className="text-zinc-400 text-sm leading-relaxed font-light mb-6">
-                    Set communication protocol. Multi-lingual support allows regional syntax overrides.
+                    Set communication protocol. Used directly inside the Chat Interface.
                   </p>
                   <div className="flex flex-wrap gap-2 md:gap-3">
-                    <span className="px-3 py-1.5 bg-yellow-500/20 border border-yellow-500/40 rounded-lg text-[10px] md:text-[11px] text-yellow-300 font-bold tracking-widest">ENGLISH</span>
-                    <span className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-[10px] md:text-[11px] text-zinc-400 hover:text-white font-bold tracking-widest transition-colors">HINDI</span>
-                    <span className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-[10px] md:text-[11px] text-zinc-400 hover:text-white font-bold tracking-widest transition-colors">TAMIL</span>
+                    {[
+                      { code: 'auto', label: 'AUTO DETECT' },
+                      { code: 'en-IN', label: 'ENGLISH' },
+                      { code: 'hi-IN', label: 'HINDI' },
+                      { code: 'ta-IN', label: 'TAMIL' },
+                      { code: 'te-IN', label: 'TELUGU' },
+                    ].map(lang => (
+                      <button 
+                        key={lang.code}
+                        onClick={() => setLanguageCode(lang.code)}
+                        className={`px-3 py-1.5 rounded-lg text-[10px] md:text-[11px] font-bold tracking-widest transition-colors cursor-pointer ${
+                          languageCode === lang.code 
+                            ? 'bg-yellow-500/20 border border-yellow-500/40 text-yellow-300 shadow-[0_0_10px_rgba(234,179,8,0.3)]' 
+                            : 'bg-white/5 border border-white/10 text-zinc-400 hover:text-white hover:bg-white/10'
+                        }`}
+                      >
+                        {lang.label}
+                      </button>
+                    ))}
                   </div>
                 </div>
               </motion.div>
@@ -222,10 +329,9 @@ export default function App() {
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.5 }}
-                whileHover={{ y: -5, boxShadow: "0 15px 40px -15px rgba(234,179,8,0.3)" }}
-                className="bg-zinc-900/40 border border-yellow-900/30 hover:border-yellow-500/50 rounded-3xl p-6 md:p-8 flex flex-col justify-between transition-all cursor-pointer group backdrop-blur-md relative overflow-hidden lg:col-span-2"
+                className="bg-zinc-900/40 border border-yellow-900/30 rounded-3xl p-6 md:p-8 flex flex-col justify-between transition-all group backdrop-blur-md relative overflow-hidden lg:col-span-2"
               >
-                <div className="absolute top-[-50%] right-[-10%] w-96 h-96 bg-yellow-600/5 rounded-full blur-3xl group-hover:bg-yellow-500/10 transition-colors pointer-events-none" />
+                <div className="absolute top-[-50%] right-[-10%] w-96 h-96 bg-yellow-600/5 rounded-full blur-3xl transition-colors pointer-events-none" />
                 <div className="flex flex-col md:flex-row gap-6 md:gap-8 items-center md:items-start h-full pb-4">
                   <div className="w-16 h-16 md:w-20 md:h-20 shrink-0 rounded-2xl bg-[#080808] border border-yellow-500/50 flex items-center justify-center shadow-[0_0_20px_rgba(234,179,8,0.2)]">
                     <Bot className="w-8 h-8 md:w-10 md:h-10 text-yellow-500 animate-pulse" />
@@ -252,50 +358,160 @@ export default function App() {
                 </div>
               </motion.div>
 
-              {/* 6. Insights Panel */}
-              <motion.div
-                initial={{ opacity: 0, y: 30 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.6 }}
-                whileHover={{ y: -5, boxShadow: "0 15px 40px -15px rgba(234,179,8,0.3)" }}
-                className="bg-zinc-900/40 border border-yellow-900/30 hover:border-yellow-500/50 rounded-3xl p-6 md:p-8 flex flex-col justify-between transition-all cursor-pointer group backdrop-blur-md relative overflow-hidden"
-              >
-                <div className="absolute top-[-50px] right-[-50px] w-48 h-48 bg-yellow-600/10 rounded-full blur-3xl group-hover:bg-yellow-500/20 transition-colors" />
-                <div>
-                  <div className="flex justify-between items-start mb-6 md:mb-8">
-                    <div className="w-14 h-14 md:w-16 md:h-16 rounded-2xl bg-[#080808] border border-yellow-700/30 flex items-center justify-center shadow-inner group-hover:border-yellow-400/50 transition-all">
-                      <LineChart className="w-6 h-6 md:w-7 md:h-7 text-yellow-600 group-hover:text-yellow-400" />
-                    </div>
-                    <span className="text-[9px] md:text-[10px] text-yellow-500/70 uppercase tracking-widest font-bold border border-yellow-500/30 bg-yellow-500/10 px-2 py-1 md:px-3 md:py-1.5 rounded-lg">Live Telemetry</span>
-                  </div>
-                  <h3 className="text-xl md:text-2xl font-bold text-zinc-100 mb-5 md:mb-6 tracking-wide">Insights Grid</h3>
-                  
-                  <div className="space-y-4 md:space-y-5">
-                    <div>
-                      <div className="flex justify-between text-[10px] md:text-xs mb-2 font-bold tracking-wider">
-                        <span className="text-zinc-400 uppercase">Success Rate</span>
-                        <span className="text-yellow-500">94.2%</span>
-                      </div>
-                      <div className="w-full h-1 md:h-1.5 bg-zinc-800 rounded-full overflow-hidden border border-zinc-700/50">
-                        <div className="w-[94%] h-full bg-gradient-to-r from-yellow-700 to-yellow-400 rounded-full shadow-[0_0_10px_rgba(234,179,8,0.5)]" />
-                      </div>
-                    </div>
-                    <div>
-                      <div className="flex justify-between text-[10px] md:text-xs mb-2 font-bold tracking-wider">
-                        <span className="text-zinc-400 uppercase">Cases Analyzed</span>
-                        <span className="text-yellow-500">1,204</span>
-                      </div>
-                      <div className="w-full h-1 md:h-1.5 bg-zinc-800 rounded-full overflow-hidden border border-zinc-700/50">
-                        <div className="w-[75%] h-full bg-gradient-to-r from-yellow-800 to-yellow-600 rounded-full" />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
-
             </main>
           </motion.div>
         )}
+
+        {/* CHAT VIEW */}
+        {activeView === "chat" && (
+          <motion.div
+            key="chat"
+            initial={{ opacity: 0, x: 50, filter: "blur(10px)" }}
+            animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
+            exit={{ opacity: 0, x: -50 }}
+            transition={{ duration: 0.6 }}
+            className="min-h-screen w-full flex flex-col bg-[#030303] text-white"
+          >
+            {/* Chat Header */}
+            <header className="p-4 md:p-6 border-b border-yellow-900/30 flex justify-between items-center bg-black/60 backdrop-blur-lg sticky top-0 z-50">
+              <button 
+                onClick={() => setActiveView("dashboard")}
+                className="flex items-center gap-2 text-zinc-400 hover:text-yellow-400 transition-colors"
+              >
+                <ArrowLeft className="w-5 h-5" /> <span className="font-bold tracking-wider text-sm uppercase">Dashboard</span>
+              </button>
+              <h2 className="text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-600 tracking-[0.2em] uppercase">
+                Oracle Chat
+              </h2>
+              <div className="flex items-center gap-2 px-3 py-1 bg-green-500/10 border border-green-500/20 rounded-full text-[10px] text-green-400 font-bold tracking-widest uppercase">
+                <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" /> Live
+              </div>
+            </header>
+
+            {/* Chat History Area */}
+            <main className="flex-1 w-full max-w-4xl mx-auto p-4 md:p-8 flex flex-col gap-6 overflow-y-auto custom-scrollbar pb-40">
+              
+              {!strategyData && chatHistory.length === 0 && (
+                <div className="flex justify-start">
+                  <div className="max-w-[80%] bg-zinc-900 border border-yellow-900/30 rounded-2xl p-5 shadow-lg">
+                    <p className="text-zinc-300 font-light leading-relaxed">
+                      Greetings. I am Chakravyuha's Legal Oracle. Tap the microphone button below and narrate your specific grievance, incident, or traffic challan issue in your regional dialect.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Stage 1: Initial RAG Execution Results */}
+              {transcriptData && (
+                 <div className="flex justify-end animate-fade-in-up mt-4">
+                   <div className="max-w-[80%] bg-yellow-900/20 border border-yellow-700/50 rounded-2xl p-5 shadow-[0_0_15px_rgba(234,179,8,0.1)] text-right">
+                     <p className="text-sm font-bold text-yellow-500 mb-2 uppercase tracking-wider">Original Context</p>
+                     <p className="text-zinc-200 font-medium whitespace-pre-wrap">"{transcriptData.transcript}"</p>
+                   </div>
+                 </div>
+              )}
+
+              {strategyData && (
+                 <div className="flex justify-start animate-fade-in-up mt-4">
+                   <div className="max-w-[95%] text-left bg-zinc-900 border border-yellow-900/50 rounded-2xl p-2 md:p-4 shadow-xl">
+                      <p className="text-sm font-bold text-yellow-500 mb-4 uppercase tracking-wider ml-4 mt-2">Oracle Strategy Protocol</p>
+                      <div className="text-black bg-zinc-100 rounded-xl p-2 sm:p-4">
+                        <LegalStrategyCard 
+                          strategy={strategyData} 
+                          languageCode={transcriptData?.language_code || languageCode}
+                        />
+                      </div>
+                   </div>
+                 </div>
+              )}
+
+              {/* Stage 2: Dynamic Follow-up Messages */}
+              {chatHistory.slice(2).map((msg, idx) => (
+                 <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in-up mt-4`}>
+                    <div className={`max-w-[80%] rounded-2xl p-5 shadow-lg ${
+                       msg.role === 'user' 
+                          ? 'bg-yellow-900/20 border border-yellow-700/50 text-right' 
+                          : 'bg-zinc-900 border border-yellow-900/30 text-left'
+                    }`}>
+                       <p className={`text-sm font-bold mb-2 uppercase tracking-wider ${msg.role === 'user' ? 'text-yellow-500' : 'text-yellow-600'}`}>
+                          {msg.role === 'user' ? "You" : "Oracle"}
+                       </p>
+                       <p className="text-zinc-200 font-medium whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                    </div>
+                 </div>
+              ))}
+
+              {isAnalyzing && (
+                <div className="flex justify-start animate-fade-in-up mt-4">
+                  <div className="max-w-[80%] bg-zinc-900 border border-yellow-900/30 rounded-2xl p-5 shadow-lg flex items-center gap-4">
+                    <div className="w-5 h-5 border-2 border-yellow-500 border-t-transparent rounded-full animate-spin" />
+                    <p className="text-zinc-300 text-sm font-light italic">Oracle is streaming...</p>
+                  </div>
+                </div>
+              )}
+              
+              <div ref={messagesEndRef} />
+            </main>
+
+            {/* Chat Input Dock */}
+            <footer className="fixed bottom-0 w-full p-6 bg-gradient-to-t from-[#030303] via-[#030303]/80 to-transparent flex justify-center z-50 pointer-events-none">
+              <div className="w-full max-w-3xl bg-zinc-900/90 backdrop-blur-2xl border border-yellow-800/40 rounded-full p-2 flex items-center justify-between shadow-[0_0_40px_rgba(0,0,0,0.8)] relative pointer-events-auto min-h-[60px] md:min-h-[70px]">
+                
+                {/* Text Prompt Input */}
+                <input 
+                  type="text" 
+                  value={textInput}
+                  onChange={e => setTextInput(e.target.value)}
+                  onKeyDown={e => {
+                     if (e.key === 'Enter' && textInput.trim()) {
+                         handleTranscript(textInput.trim(), languageCode);
+                         setTextInput("");
+                     }
+                  }}
+                  placeholder="Type your dispute or follow-up question..."
+                  className="flex-1 bg-transparent border-none text-zinc-100 px-6 py-2 min-w-0 outline-none text-sm md:text-base placeholder-zinc-500 rounded-full"
+                />
+
+                {/* Conditional Send/Mic Actions */}
+                <div className="flex items-center gap-2 pr-1 md:pr-2">
+                  <AnimatePresence mode="popLayout">
+                    {textInput.trim() ? (
+                      <motion.button 
+                         key="send"
+                         initial={{ scale: 0, opacity: 0 }}
+                         animate={{ scale: 1, opacity: 1 }}
+                         exit={{ scale: 0, opacity: 0 }}
+                         whileHover={{ scale: 1.05 }}
+                         whileTap={{ scale: 0.95 }}
+                         onClick={() => {
+                            handleTranscript(textInput.trim(), languageCode);
+                            setTextInput("");
+                         }}
+                         className="w-12 h-12 md:w-14 md:h-14 rounded-full bg-yellow-500/20 border-2 border-yellow-500 text-yellow-500 flex items-center justify-center hover:bg-yellow-500/30 transition-shadow shadow-[0_0_15px_rgba(234,179,8,0.3)] z-10 cursor-pointer"
+                      >
+                        <ChevronRight size={24} />
+                      </motion.button>
+                    ) : (
+                      <motion.div 
+                        key="mic"
+                        initial={{ scale: 0, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        exit={{ scale: 0, opacity: 0 }}
+                        className="transform origin-right z-10"
+                      >
+                         <MicButton onTranscript={handleTranscript} languageCode={languageCode} />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              </div>
+            </footer>
+          </motion.div>
+        )}
+
+        {/* ARCHIVES VIEW */}
+        {activeView === "archives" && <CaseTracker setActiveView={setActiveView} />}
+
       </AnimatePresence>
     </div>
   );

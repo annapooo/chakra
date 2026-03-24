@@ -1,29 +1,26 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 const LegalStrategyCard = ({ strategy, languageCode }) => {
   const [currentStepIndex, setCurrentStepIndex] = useState(-1);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isDeploying, setIsDeploying] = useState(false);
   const [deploymentStatus, setDeploymentStatus] = useState(null);
+  const isPlayingRef = useRef(false);
+  const currentAudioRef = useRef(null);
 
   const playAudioFromBase64 = async (base64Audio) => {
     try {
-      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      const binaryString = window.atob(base64Audio);
-      const len = binaryString.length;
-      const bytes = new Uint8Array(len);
-      for (let i = 0; i < len; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
+      if (currentAudioRef.current) {
+        currentAudioRef.current.pause();
       }
-      const audioBuffer = await audioCtx.decodeAudioData(bytes.buffer);
-      const source = audioCtx.createBufferSource();
-      source.buffer = audioBuffer;
-      source.connect(audioCtx.destination);
-      source.start(0);
+      const audio = new Audio("data:audio/wav;base64," + base64Audio);
+      currentAudioRef.current = audio;
+      await audio.play();
       return new Promise((resolve) => {
-        source.onended = () => {
-          resolve();
+        audio.onended = () => {
+          resolve(); 
         };
+        audio.onerror = resolve;
       });
     } catch (e) {
       console.error("Audio playback failed", e);
@@ -51,21 +48,42 @@ const LegalStrategyCard = ({ strategy, languageCode }) => {
   };
 
   useEffect(() => {
-    if (steps.length > 0) {
-      playAllSteps();
+    // Abort out of existing sequences and explicitly pause old tracks
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
     }
+    isPlayingRef.current = false;
+    
+    const timeout = setTimeout(() => {
+      if (steps.length > 0) {
+        playAllSteps();
+      }
+    }, 100);
+
+    return () => {
+      if (currentAudioRef.current) currentAudioRef.current.pause();
+      isPlayingRef.current = false;
+      clearTimeout(timeout);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [strategy]);
 
   const playAllSteps = async () => {
-    if (isPlaying) return;
+    if (isPlayingRef.current) return;
+    isPlayingRef.current = true;
     setIsPlaying(true);
     for (let i = 0; i < steps.length; i++) {
+      if (!isPlayingRef.current) break; // allows the loop to exit cleanly if interrupted
       setCurrentStepIndex(i);
       await fetchAndPlayTTS(steps[i]);
     }
-    setCurrentStepIndex(-1); // Resets when finished
-    setIsPlaying(false);
+    
+    // Only reset state if we weren't violently interrupted by a user action
+    if (isPlayingRef.current) {
+      setCurrentStepIndex(-1);
+      setIsPlaying(false);
+      isPlayingRef.current = false;
+    }
   };
 
   const handleDeployAgent = async () => {
