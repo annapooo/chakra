@@ -1,98 +1,53 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Mic, Scale, History, Globe, 
+  Mic, Scale, History, Globe, Smartphone, User, Bell,
   Bot, LineChart, ArrowUp, ChevronRight, ArrowLeft
 } from 'lucide-react';
 import MicButton from './components/MicButton';
 import TranscriptBox from './components/TranscriptBox';
 import LegalStrategyCard from './components/LegalStrategyCard';
 import CaseTracker from './components/CaseTracker';
+import LegalStrategyView from './components/LegalStrategyView';
+import EssentialAppsView from './components/EssentialAppsView';
+import ProfileView from './components/ProfileView';
+import NotificationsPanel from './components/NotificationsPanel';
 import EmergencyCallModal from './components/EmergencyCallModal';
 import PortalRedirectModal from './components/PortalRedirectModal';
 
-// ─── Recent Topics Widget ───────────────────────────────────────────────────
-function timeAgo(isoString) {
-  if (!isoString) return '';
-  const diff = Math.floor((Date.now() - new Date(isoString)) / 1000);
-  if (diff < 60) return 'just now';
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  return `${Math.floor(diff / 86400)}d ago`;
-}
-
-function RecentTopicsCard({ activeView }) {
-  const [cases, setCases] = React.useState([]);
-  const [loading, setLoading] = React.useState(true);
-
-  React.useEffect(() => {
-    if (activeView !== 'dashboard') return;
-    setLoading(true);
-    const API_URL = import.meta.env.VITE_APP_API_URL || `http://${window.location.hostname}:8000`;
-    fetch(`${API_URL}/cases/recent?limit=6`)
-      .then(r => r.json())
-      .then(d => { setCases(d.cases || []); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, [activeView]);
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 30 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: 0.5 }}
-      className="bg-zinc-900/40 border border-yellow-900/30 rounded-3xl p-6 md:p-8 flex flex-col backdrop-blur-md relative overflow-hidden lg:col-span-2"
-    >
-      <div className="absolute top-[-50%] right-[-10%] w-96 h-96 bg-yellow-600/5 rounded-full blur-3xl pointer-events-none" />
-      <div className="flex items-center justify-between mb-5 relative z-10">
-        <div>
-          <h3 className="text-xl md:text-2xl font-bold text-zinc-100 tracking-wide">Recent Topics</h3>
-          <p className="text-zinc-500 text-xs mt-1 uppercase tracking-widest">Your last {cases.length || '—'} queries</p>
-        </div>
-        <span className="flex items-center gap-2 px-3 py-1 bg-yellow-500/10 border border-yellow-500/20 rounded-full text-[10px] text-yellow-400 font-bold tracking-widest uppercase">
-          <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" /> Live
-        </span>
-      </div>
-
-      <div className="relative z-10 flex flex-col gap-2">
-        {loading && (
-          <div className="flex items-center gap-3 py-4">
-            <div className="w-4 h-4 border-2 border-yellow-500 border-t-transparent rounded-full animate-spin" />
-            <p className="text-zinc-500 text-sm">Loading case history...</p>
-          </div>
-        )}
-        {!loading && cases.length === 0 && (
-          <p className="text-zinc-600 text-sm italic py-4">No cases yet. Start a conversation to see your history here.</p>
-        )}
-        {!loading && cases.map((c, i) => (
-          <div key={i} className="flex items-start gap-3 bg-zinc-800/40 border border-zinc-700/30 rounded-2xl px-4 py-3 hover:border-yellow-700/30 transition-colors">
-            <span className="mt-0.5 w-6 h-6 shrink-0 rounded-full bg-yellow-900/40 border border-yellow-700/30 flex items-center justify-center text-[10px] text-yellow-500 font-bold">{i + 1}</span>
-            <div className="flex-1 min-w-0">
-              <p className="text-zinc-200 text-sm font-medium truncate">{c.topic}</p>
-              {c.section && c.section !== '—' && (
-                <span className="inline-block mt-1 text-[10px] px-2 py-0.5 rounded-full bg-indigo-900/40 border border-indigo-700/30 text-indigo-300 font-semibold tracking-wide">
-                  {c.section}
-                </span>
-              )}
-            </div>
-            <span className="text-zinc-600 text-[10px] shrink-0 mt-0.5">{timeAgo(c.created_at)}</span>
-          </div>
-        ))}
-      </div>
-    </motion.div>
-  );
-}
 // ────────────────────────────────────────────────────────────────────────────
 
-
 export default function App() {
-  const [activeView, setActiveView] = useState("landing");
-  const [transcriptData, setTranscriptData] = useState(null);
-  const [strategyData, setStrategyData] = useState(null);
-  const [chatHistory, setChatHistory] = useState([]);
+  const [activeView, setActiveView] = useState(() => {
+    return localStorage.getItem("chakra_activeView") || "landing";
+  });
+  const [transcriptData, setTranscriptData] = useState(() => {
+    const saved = localStorage.getItem("chakra_transcriptData");
+    return saved ? JSON.parse(saved) : null;
+  });
+  const [strategyData, setStrategyData] = useState(() => {
+    const saved = localStorage.getItem("chakra_strategyData");
+    return saved ? JSON.parse(saved) : null;
+  });
+  const [chatHistory, setChatHistory] = useState(() => {
+    const saved = localStorage.getItem("chakra_chatHistory");
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [reminders, setReminders] = useState(() => {
+    const saved = localStorage.getItem("chakra_reminders");
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [showNotifications, setShowNotifications] = useState(false);
   const [languageCode, setLanguageCode] = useState("auto");
   const [dialect, setDialect] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [textInput, setTextInput] = useState("");
+  
+  useEffect(() => { localStorage.setItem("chakra_activeView", activeView); }, [activeView]);
+  useEffect(() => { localStorage.setItem("chakra_transcriptData", JSON.stringify(transcriptData)); }, [transcriptData]);
+  useEffect(() => { localStorage.setItem("chakra_strategyData", JSON.stringify(strategyData)); }, [strategyData]);
+  useEffect(() => { localStorage.setItem("chakra_chatHistory", JSON.stringify(chatHistory)); }, [chatHistory]);
+  useEffect(() => { localStorage.setItem("chakra_reminders", JSON.stringify(reminders)); }, [reminders]);
   const [emergencyEscalation, setEmergencyEscalation] = useState(null);
   const [portalEscalation, setPortalEscalation] = useState(null);
   const messagesEndRef = useRef(null);
@@ -156,7 +111,37 @@ export default function App() {
     }
   };
 
+  const checkSOS = (text) => {
+    const sosKeywords = ["scared", "kidnap", "help me", "save me", "rape", "attack", "murder", "danger", "emergency", "kill"];
+    const lower = text.toLowerCase();
+    return sosKeywords.some(kw => lower.includes(kw));
+  };
+
   const handleTranscript = async (transcript, langCode, detectedDialect = "") => {
+    // 🔹 Route 0: Emergency SOS Override
+    if (checkSOS(transcript)) {
+      const saved = localStorage.getItem('chakra_userProfile');
+      const profile = saved ? JSON.parse(saved) : {};
+      const emergencyNumber = profile.emergencyContact || "112";
+      
+      // Trigger the EmergencyCallModal (Twilio bridge)
+      setEmergencyEscalation({
+         type: 'call',
+         target: emergencyNumber,
+         label: 'Emergency Contact (SOS)'
+      });
+
+      // Add to chat history
+      const newMsg = { role: "user", content: transcript, langCode };
+      const sosMsg = { role: "assistant", content: `🚨 **URGENT SOS DETECTED** 🚨\nInitiating emergency protocol. We are connecting you to your emergency contact (${emergencyNumber}) immediately.` };
+      
+      setChatHistory(prev => [...prev, newMsg, sosMsg]);
+      
+      // Also trigger native dialer directly for fastest response
+      window.location.href = `tel:${emergencyNumber}`;
+      return;
+    }
+
     const API_URL = import.meta.env.VITE_APP_API_URL || `http://${window.location.hostname}:8000`;
     
     // 🔹 Route 1: Initial RAG Query
@@ -376,12 +361,25 @@ export default function App() {
                   Chakravyuha
                 </h2>
               </div>
-              <button 
-                onClick={() => setActiveView("landing")}
-                className="px-6 py-2.5 border border-zinc-800 rounded-full text-xs md:text-sm tracking-widest text-zinc-400 hover:text-yellow-400 hover:border-yellow-600/50 hover:bg-yellow-900/20 transition-all uppercase cursor-pointer"
-              >
-                Retreat
-              </button>
+              <div className="flex items-center gap-4">
+                <button 
+                  onClick={() => setShowNotifications(true)}
+                  className="relative p-2.5 md:p-3 border border-zinc-800 bg-zinc-900/60 rounded-full text-zinc-400 hover:text-yellow-400 hover:border-yellow-600/50 hover:bg-yellow-900/20 transition-all cursor-pointer"
+                >
+                  <Bell size={20} />
+                  {reminders.length > 0 && (
+                    <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-lg">
+                      {reminders.length}
+                    </span>
+                  )}
+                </button>
+                <button 
+                  onClick={() => setActiveView("landing")}
+                  className="px-6 py-2.5 border border-zinc-800 rounded-full text-xs md:text-sm tracking-widest text-zinc-400 hover:text-yellow-400 hover:border-yellow-600/50 hover:bg-yellow-900/20 transition-all uppercase cursor-pointer"
+                >
+                  Retreat
+                </button>
+              </div>
             </header>
 
             <main className="w-full max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 relative z-10">
@@ -415,7 +413,7 @@ export default function App() {
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.2 }}
-                onClick={() => setActiveView("archives")}
+                onClick={() => setActiveView("strategy")}
                 whileHover={{ y: -5, boxShadow: "0 15px 40px -15px rgba(234,179,8,0.3)" }}
                 className="bg-zinc-900/40 border border-yellow-900/30 hover:border-yellow-500/50 rounded-3xl p-6 md:p-8 flex flex-col justify-between transition-all cursor-pointer group backdrop-blur-md relative overflow-hidden"
               >
@@ -495,8 +493,53 @@ export default function App() {
                 </div>
               </motion.div>
 
-              {/* 5. Recent Topics */}
-              <RecentTopicsCard activeView={activeView} />
+              {/* 5. Essential Apps */}
+              <motion.div
+                initial={{ opacity: 0, y: 30 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.5 }}
+                onClick={() => setActiveView("apps")}
+                whileHover={{ y: -5, boxShadow: "0 15px 40px -15px rgba(234,179,8,0.3)" }}
+                className="bg-zinc-900/40 border border-yellow-900/30 hover:border-yellow-500/50 rounded-3xl p-6 md:p-8 flex flex-col justify-between transition-all cursor-pointer group backdrop-blur-md relative overflow-hidden"
+              >
+                <div className="absolute top-[-50px] right-[-50px] w-48 h-48 bg-yellow-600/10 rounded-full blur-3xl group-hover:bg-yellow-500/20 transition-colors" />
+                <div>
+                  <div className="w-14 h-14 md:w-16 md:h-16 rounded-2xl bg-[#080808] border border-yellow-700/30 flex items-center justify-center mb-6 shadow-inner group-hover:border-yellow-400/50 transition-all">
+                    <Smartphone className="w-6 h-6 md:w-7 md:h-7 text-yellow-600 group-hover:text-yellow-400" />
+                  </div>
+                  <h3 className="text-xl md:text-2xl font-bold text-zinc-100 mb-3 tracking-wide">Essential Apps</h3>
+                  <p className="text-zinc-400 text-sm leading-relaxed font-light">
+                    Access guides & setup instructions for key government apps like DigiLocker, mParivahan, and more.
+                  </p>
+                </div>
+                <div className="mt-8 md:mt-10 flex items-center text-xs text-yellow-500/80 uppercase tracking-widest font-bold">
+                  View Setup Guides <ChevronRight className="w-4 h-4 ml-1" />
+                </div>
+              </motion.div>
+
+              {/* 6. Personal Details */}
+              <motion.div
+                initial={{ opacity: 0, y: 30 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.6 }}
+                onClick={() => setActiveView("profile")}
+                whileHover={{ y: -5, boxShadow: "0 15px 40px -15px rgba(234,179,8,0.3)" }}
+                className="bg-zinc-900/40 border border-yellow-900/30 hover:border-yellow-500/50 rounded-3xl p-6 md:p-8 flex flex-col justify-between transition-all cursor-pointer group backdrop-blur-md relative overflow-hidden"
+              >
+                <div className="absolute top-[-50px] right-[-50px] w-48 h-48 bg-yellow-600/10 rounded-full blur-3xl group-hover:bg-yellow-500/20 transition-colors" />
+                <div>
+                  <div className="w-14 h-14 md:w-16 md:h-16 rounded-2xl bg-[#080808] border border-yellow-700/30 flex items-center justify-center mb-6 shadow-inner group-hover:border-yellow-400/50 transition-all">
+                    <User className="w-6 h-6 md:w-7 md:h-7 text-yellow-600 group-hover:text-yellow-400" />
+                  </div>
+                  <h3 className="text-xl md:text-2xl font-bold text-zinc-100 mb-3 tracking-wide">Personal Details</h3>
+                  <p className="text-zinc-400 text-sm leading-relaxed font-light">
+                    Securely store your details locally to easily copy-paste when filling out application forms online.
+                  </p>
+                </div>
+                <div className="mt-8 md:mt-10 flex items-center text-xs text-yellow-500/80 uppercase tracking-widest font-bold">
+                  Manage Profile <ChevronRight className="w-4 h-4 ml-1" />
+                </div>
+              </motion.div>
 
             </main>
           </motion.div>
@@ -667,6 +710,15 @@ export default function App() {
         {/* ARCHIVES VIEW */}
         {activeView === "archives" && <CaseTracker setActiveView={setActiveView} />}
 
+        {/* STRATEGY VIEW */}
+        {activeView === "strategy" && <LegalStrategyView setActiveView={setActiveView} />}
+
+        {/* ESSENTIAL APPS VIEW */}
+        {activeView === "apps" && <EssentialAppsView setActiveView={setActiveView} />}
+
+        {/* PROFILE VIEW */}
+        {activeView === "profile" && <ProfileView setActiveView={setActiveView} />}
+
       </AnimatePresence>
 
       {/* Emergency Call Modal */}
@@ -679,6 +731,14 @@ export default function App() {
       <PortalRedirectModal
         escalation={portalEscalation}
         onClose={() => setPortalEscalation(null)}
+      />
+
+      {/* Notifications Side Panel */}
+      <NotificationsPanel
+        isOpen={showNotifications}
+        onClose={() => setShowNotifications(false)}
+        reminders={reminders}
+        setReminders={setReminders}
       />
     </div>
   );
