@@ -1,7 +1,7 @@
 import React, { useRef, useEffect } from 'react';
 import { Phone, ExternalLink, Scale } from 'lucide-react';
 
-const LegalStrategyCard = ({ strategy }) => {
+const LegalStrategyCard = ({ strategy, chatHistory = [] }) => {
   const audioRef = useRef(null);
 
   // Auto-read the explanation once via TTS in App.jsx — this component just renders
@@ -14,6 +14,8 @@ const LegalStrategyCard = ({ strategy }) => {
   if (!strategy) return null;
 
   const { explanation, matched_section, escalation } = strategy;
+
+  const recentChat = Array.isArray(chatHistory) ? chatHistory.slice(-6) : [];
 
   const handleEscalation = () => {
     if (!escalation) return;
@@ -36,6 +38,21 @@ const LegalStrategyCard = ({ strategy }) => {
       )}
 
       {/* Oracle's humanized message — plain flowing text */}
+      {recentChat.length > 0 && (
+        <div className="bg-zinc-100/60 border border-zinc-200 rounded-2xl p-3 mb-2">
+          <p className="text-xs font-bold text-zinc-600 uppercase tracking-wider mb-2">Chat Context</p>
+          <div className="flex flex-col gap-2">
+            {recentChat.map((m, i) => (
+              <div key={i} className={`text-sm rounded px-3 py-2 ${m.role === 'user' ? 'bg-yellow-50 text-yellow-800 self-end' : 'bg-white text-zinc-800 self-start'}`}>
+                <div className="text-[11px] font-semibold mb-1 uppercase tracking-wider">
+                  {m.role === 'user' ? 'You' : 'Oracle'}
+                </div>
+                <div className="whitespace-pre-wrap leading-relaxed text-[13px]">{m.content}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="bg-zinc-50 border border-zinc-200 rounded-2xl rounded-tl-sm p-5 shadow-sm">
         <p className="text-zinc-800 text-base leading-relaxed whitespace-pre-wrap font-normal">
           {explanation}

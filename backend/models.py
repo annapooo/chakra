@@ -22,10 +22,13 @@ class LegalSection(BaseModel):
 class TTSRequest(BaseModel):
     text: str
     language_code: str = "ta-IN"
+    # optional: if provided, translate the input text into this language before TTS
+    translate_to: Optional[str] = None
 
 class RAGQueryRequest(BaseModel):
     text: str
     language_code: str = "ta-IN"
+    top_k: int = 5
 
 class UserDetails(BaseModel):
     name: str

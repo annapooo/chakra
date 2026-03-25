@@ -8,6 +8,7 @@ import MicButton from './components/MicButton';
 import TranscriptBox from './components/TranscriptBox';
 import LegalStrategyCard from './components/LegalStrategyCard';
 import CaseTracker from './components/CaseTracker';
+import Archives from './components/Archives';
 import EmergencyCallModal from './components/EmergencyCallModal';
 import PortalRedirectModal from './components/PortalRedirectModal';
 
@@ -428,6 +429,11 @@ export default function App() {
                   <p className="text-zinc-400 text-sm leading-relaxed font-light">
                     View active defense vectors logic. Re-examine the most recent strategy generated from your chats.
                   </p>
+                    <LegalStrategyCard 
+                      strategy={strategyData} 
+                      languageCode={transcriptData?.language_code || languageCode}
+                      chatHistory={chatHistory}
+                    />
                 </div>
                 <div className="mt-8 md:mt-10 flex items-center text-xs text-yellow-500/80 uppercase tracking-widest font-bold">
                   View Tactics <ChevronRight className="w-4 h-4 ml-1" />
@@ -439,7 +445,7 @@ export default function App() {
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.3 }}
-                onClick={() => setActiveView("archives")}
+                onClick={() => setActiveView("demos")}
                 whileHover={{ y: -5, boxShadow: "0 15px 40px -15px rgba(234,179,8,0.3)" }}
                 className="bg-zinc-900/40 border border-yellow-900/30 hover:border-yellow-500/50 rounded-3xl p-6 md:p-8 flex flex-col justify-between transition-all cursor-pointer group backdrop-blur-md relative overflow-hidden"
               >
@@ -664,8 +670,15 @@ export default function App() {
           </motion.div>
         )}
 
-        {/* ARCHIVES VIEW */}
-        {activeView === "archives" && <CaseTracker setActiveView={setActiveView} />}
+        {/* ARCHIVES / DEMOS VIEWS */}
+        {activeView === "archives" && (
+          <Archives
+            setActiveView={setActiveView}
+            chatHistory={chatHistory}
+            strategyData={strategyData}
+          />
+        )}
+        {activeView === "demos" && <CaseTracker setActiveView={setActiveView} />}
 
       </AnimatePresence>
 
