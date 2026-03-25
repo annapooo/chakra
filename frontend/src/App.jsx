@@ -72,6 +72,11 @@ export default function App() {
     scrollToBottom();
   }, [transcriptData, isAnalyzing, strategyData, chatHistory]);
 
+  // Dev: log key state to console to help debug blank-screen issues
+  useEffect(() => {
+    console.log("DEV STATE: activeView=", activeView, "languageCode=", languageCode, "chatHistoryLen=", chatHistory.length, "strategyData=", strategyData);
+  }, [activeView, languageCode, chatHistory, strategyData]);
+
   const playAudio = async (text, langCode) => {
     // 🔒 If a TTS fetch is already in flight, drop this call — prevents overlap
     if (isFetchingRef.current) return;
@@ -222,6 +227,27 @@ export default function App() {
 
   return (
     <div className="min-h-screen w-full bg-[#030303] text-white font-sans overflow-hidden selection:bg-yellow-500/30">
+      {/* DEV DEBUG OVERLAY - remove in production */}
+      <div className="fixed top-4 right-4 z-[9999] bg-black/60 border border-yellow-700/40 rounded-md p-3 text-xs text-yellow-200 max-w-xs">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <div className="font-bold">DEV</div>
+            <div>view: {activeView}</div>
+            <div>lang: {languageCode}</div>
+            <div>chat: {chatHistory.length}</div>
+          </div>
+          <div className="flex flex-col gap-1">
+            <button
+              onClick={() => { localStorage.clear(); location.reload(); }}
+              className="px-2 py-1 bg-yellow-500 text-black rounded text-[11px] font-bold"
+            >Clear LS</button>
+            <button
+              onClick={() => { window.scrollTo(0,0); }}
+              className="px-2 py-1 bg-zinc-800 text-yellow-200 rounded text-[11px] border border-yellow-700/30"
+            >Top</button>
+          </div>
+        </div>
+      </div>
       <AnimatePresence mode="wait">
         
         {/* PHASE 1: LANDING PAGE */}
